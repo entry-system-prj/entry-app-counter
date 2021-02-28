@@ -22,31 +22,25 @@ frameworkVersion: '1'
 
 provider:
   name: aws
-  runtime: nodejs12.x
+  runtime: nodejs14.x
 
 # you can overwrite defaults here
 #  stage: dev
 #  region: us-east-1
 
 # you can add statements to the Lambda function's IAM Role here
-#  iamRoleStatements:
-#    - Effect: "Allow"
-#      Action:
-#        - "s3:ListBucket"
-#      Resource: { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "ServerlessDeploymentBucket" } ] ]  }
-#    - Effect: "Allow"
-#      Action:
-#        - "s3:PutObject"
-#      Resource:
-#        Fn::Join:
-#          - ""
-#          - - "arn:aws:s3:::"
-#            - "Ref" : "ServerlessDeploymentBucket"
-#            - "/*"
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action:
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+      Resource: "*"
 
 # you can define service wide environment variables here
-#  environment:
-#    variable1: value1
+  environment:
+    EVENT_TABLE_NAME: "${self:service}-event-${opt:stage, self:provider.stage}"
 
 # you can add packaging information here
 #package:
@@ -60,6 +54,18 @@ provider:
 functions:
   hello:
     handler: handler.hello
+  create_event:
+    handler: src/v1/event.create
+    events:
+      - http:
+          path: v1/event/create
+          method: post
+  list_event:
+    handler: src/v1/event.list
+    events:
+      - http:
+          path: v1/event/list
+          method: get
 #    The following are a few example events you can configure
 #    NOTE: Please make sure to change your handler code to work with those events
 #    Check the event documentation for details
@@ -111,3 +117,25 @@ functions:
 #     NewOutput:
 #       Description: "Description for the output"
 #       Value: "Some output value"
+resources:
+  Resources:
+    EventTable:
+      Type: 'AWS::DynamoDB::Table'
+      # 開発段階は DB 吹っ飛ばせた方が助かるため Delete とする
+      # 将来的には Retain としたほうが良い
+      DeletionPolicy: Delete
+      Properties:
+        AttributeDefinitions:
+          -
+            AttributeName: "id"
+            AttributeType: "S"
+        KeySchema:
+          -
+            AttributeName: "id"
+            KeyType: "HASH"
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        StreamSpecification:
+          StreamViewType: "NEW_AND_OLD_IMAGES"
+        TableName: ${self:provider.environment.EVENT_TABLE_NAME}
